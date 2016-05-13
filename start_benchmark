@@ -1,0 +1,60 @@
+TOTAL_CALLS=$1
+CONCURRENT=$2
+GWORKERS=$3
+
+
+# Prepare virtualenvs
+python -m virtualenv .vpy2
+python3 -m virtualenv .vpy3
+
+.vpy2/bin/pip install -r py2_requirements.txt
+.vpy3/bin/pip install -r py3_requirements.txt
+
+
+nohup .vpy3/bin/gunicorn bench_cherrypy:app -w $GWORKERS --bind localhost:8080  2>&1 &
+nohup .vpy3/bin/gunicorn bench_asyncio:app -w $GWORKERS --bind localhost:8081 --worker-class aiohttp.worker.GunicornWebWorker 2>&1 &
+nohup .vpy3/bin/gunicorn bench_flask:app -w $GWORKERS --bind localhost:8082  2>&1 &
+nohup .vpy2/bin/gunicorn bench_cherrypy:app -w $GWORKERS --bind localhost:8083  2>&1 &
+nohup .vpy2/bin/gunicorn bench_flask:app -w $GWORKERS --bind localhost:8084  2>&1 &
+
+
+echo "Let all services to start..."
+sleep 10
+
+echo
+echo "# Python 3 / AsyncIO: - aiohttp + aioamqp"
+echo
+
+.vpy2/bin/palb -c $CONCURRENT -n $TOTAL_CALLS http://localhost:8081/  2>/dev/null
+
+
+echo
+echo "# Python 3 CherryPy + amqp"
+echo
+
+.vpy2/bin/palb -c $CONCURRENT -n $TOTAL_CALLS http://localhost:8080/  2>/dev/null
+
+
+echo
+echo "# Python 3 Flask + amqp"
+echo
+
+.vpy2/bin/palb -c $CONCURRENT -n $TOTAL_CALLS http://localhost:8082/  2>/dev/null
+
+
+echo
+echo "# Python 2 CherryPy + amqp"
+echo
+
+.vpy2/bin/palb -c $CONCURRENT -n $TOTAL_CALLS http://localhost:8083/  2>/dev/null
+
+
+echo
+echo "# Python 2 Flask + amqp"
+echo
+
+.vpy2/bin/palb -c $CONCURRENT -n $TOTAL_CALLS http://localhost:8084/  2>/dev/null
+
+pkill -9 -f bench_cherrypy
+pkill -9 -f bench_asycio
+pkill -9 -f bench_flask
